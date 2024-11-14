@@ -31,4 +31,4 @@ scrape_configs:
     metrics_path: "/prometheus"
 
     static_configs:
-      - targets: ["localhost:2113"]
+      - targets: ["host.docker.internal:2113"]
