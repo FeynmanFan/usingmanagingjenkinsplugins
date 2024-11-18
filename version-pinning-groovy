@@ -1,0 +1,101 @@
+import java.nio.file.*
+import jenkins.model.Jenkins
+
+// Define a class to hold plugin data
+class Plugin {
+    String name
+    String version
+}
+
+// Path to the tab-delimited file
+def filePath = "/var/jenkins_home/pinned-plugins.txt"
+
+// Directory where plugin files are managed
+def pluginDirPath = "/var/jenkins_home/plugins"
+
+def deleteExistingPluginFile(String pluginId, String pluginDir) {
+    // Construct the file path
+    def pluginFilePath = Paths.get(pluginDir, "${pluginId}.jpi")
+
+    // Check if the file exists and delete it if it does
+    if (Files.exists(pluginFilePath)) {
+        println "Deleting existing plugin file: ${pluginFilePath}"
+        Files.delete(pluginFilePath)
+    } else {
+        println "Plugin file does not exist: ${pluginFilePath}"
+    }
+}
+
+// Read and parse the file
+def plugins = []
+new File(filePath).eachLine { line ->
+    def parts = line.split("\t") // Split by tab
+    if (parts.size() != 2){
+        println "'${line}' is not propertly formatted"
+    }
+
+    plugins << new Plugin(name: parts[0], version: parts[1])
+}
+
+plugins.each { plugin ->
+    println "Processing plugin: ${plugin.name}, Version: ${plugin.version}"
+    
+    // Get installed plugin version
+    def installedPlugin = Jenkins.instance.pluginManager.getPlugin(plugin.name)
+    if (installedPlugin) {
+        def installedVersion = installedPlugin.getVersion()
+        if (installedVersion == plugin.version) {
+            return
+        } 
+
+        isDirty = true
+
+        println "${plugin.name} installed version (${installedVersion}) differs from specified version (${plugin.version}). Proceeding."
+        
+        deleteExistingPluginFile(plugin.name, pluginDirPath)
+    } else {
+        println "${plugin.name} is not currently installed. Proceeding with installation."
+        isDirty = true
+    }
+
+    // Define the path to delete
+    def pathToDelete = Paths.get(pluginDirPath, plugin.name)
+
+    // Delete the directory or file with the same name as the plugin
+    if (Files.exists(pathToDelete)) {
+        println "Deleting path: ${pathToDelete}"
+        Files.walk(pathToDelete)
+            .sorted(Comparator.reverseOrder())
+            .forEach { path -> Files.delete(path) }
+        println "Deleted: ${pathToDelete}"
+    } else {
+        println "Path does not exist: ${pathToDelete}"
+    }
+
+    // Construct the download URL
+    def downloadUrl = "https://updates.jenkins.io/download/plugins/${plugin.name}/${plugin.version}/${plugin.name}.hpi"
+    println "Downloading plugin from: ${downloadUrl}"
+
+    // Define the target file path
+    def targetFilePath = Paths.get(pluginDirPath, "${plugin.name}.hpi").toString()
+
+    // Download the file
+    try {
+        new URL(downloadUrl).withInputStream { inputStream ->
+            new File(targetFilePath).withOutputStream { outputStream ->
+                outputStream << inputStream
+            }
+        }
+        println "Downloaded: ${plugin.name}.hpi to ${targetFilePath}"
+    } catch (Exception e) {
+        println "Failed to download ${plugin.name}.hpi: ${e.message}"
+    }
+}
+
+// Restart Jenkins to apply any changes
+if (!isDirty){ //we're all done
+    return
+}
+
+println "Restarting Jenkins..."
+Jenkins.instance.restart()

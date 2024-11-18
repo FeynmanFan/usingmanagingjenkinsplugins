@@ -1,0 +1,3 @@
+git	4.11.5
+pipeline	3.2
+blueocean	1.25.0
